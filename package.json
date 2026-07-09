@@ -1,0 +1,25 @@
+{
+  "name": "codex-profile-switcher",
+  "version": "0.1.0",
+  "description": "Manual local profile switcher for Codex CLI accounts and workspaces.",
+  "type": "module",
+  "bin": {
+    "codex-profile": "./bin/codex-profile.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "doctor": "node ./bin/codex-profile.js doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "codex",
+    "profile",
+    "cli",
+    "keychain",
+    "credential-manager",
+    "secret-service"
+  ],
+  "license": "MIT"
+}
