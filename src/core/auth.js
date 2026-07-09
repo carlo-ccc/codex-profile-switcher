@@ -13,11 +13,15 @@ import { createSecretRef } from "./metadata-store.js";
 import { assertSwitchCanProceed } from "./process-detect.js";
 
 export async function importAuthJson(filePath, profileId, options) {
-  const { metadataStore, secureStore, profile = {} } = options;
   const raw = await fs.readFile(filePath, "utf8");
+  return importAuthJsonString(raw, profileId, options);
+}
+
+export async function importAuthJsonString(authContent, profileId, options) {
+  const { metadataStore, secureStore, profile = {} } = options;
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(authContent);
   } catch (error) {
     throw new AppError("AUTH_JSON_INVALID", `Invalid auth.json: ${error.message}`, {
       cause: error,
@@ -28,7 +32,7 @@ export async function importAuthJson(filePath, profileId, options) {
   const email = profile.email || findFirstValueByKey(parsed, ["email", "user_email"]);
   const now = new Date().toISOString();
 
-  await secureStore.set(profileId, raw);
+  await secureStore.set(profileId, authContent);
   let saved;
   try {
     saved = await metadataStore.upsertProfile({

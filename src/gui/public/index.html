@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Profile Switcher</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local GUI</p>
+          <h1>Codex Profile Switcher</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="activeBadge" class="status-pill neutral">未加载</span>
+          <button id="refreshButton" class="icon-button" type="button" title="刷新">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </div>
+      </header>
+
+      <section id="boundaryPanel" class="boundary-panel hidden">
+        <div>
+          <strong>本工具仅用于手动切换本地 Codex profile。</strong>
+          <p>它不会合并多个账号额度，不会自动切号，也不会在账号达到限制后接力同一个任务。</p>
+        </div>
+        <label class="check-row">
+          <input id="ackCheckbox" type="checkbox" />
+          <span>我理解并同意：本工具只用于手动 profile 切换。</span>
+        </label>
+        <button id="ackButton" class="primary-button" type="button" disabled>确认</button>
+      </section>
+
+      <section id="toast" class="toast hidden" role="status"></section>
+
+      <div class="workspace">
+        <aside class="sidebar panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Profiles</p>
+              <h2>账号列表</h2>
+            </div>
+            <button id="addToggleButton" class="icon-button" type="button" title="新增 profile">
+              <span aria-hidden="true">＋</span>
+            </button>
+          </div>
+          <div id="profileList" class="profile-list"></div>
+        </aside>
+
+        <section class="main-grid">
+          <div class="panel action-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Selected</p>
+                <h2 id="selectedTitle">未选择</h2>
+              </div>
+              <span id="selectedAuthBadge" class="status-pill neutral">auth 未知</span>
+            </div>
+
+            <div id="selectedSummary" class="summary-grid"></div>
+
+            <div class="button-row">
+              <button id="switchButton" class="primary-button" type="button" disabled>
+                <span aria-hidden="true">⇄</span>
+                切换到此 profile
+              </button>
+              <label class="toggle-row">
+                <input id="allowRunningCheckbox" type="checkbox" />
+                <span>允许进程运行时切换</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="panel status-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Status</p>
+                <h2>本机状态</h2>
+              </div>
+              <span id="processBadge" class="status-pill neutral">检测中</span>
+            </div>
+            <div id="statusGrid" class="status-grid"></div>
+            <div id="processList" class="process-list"></div>
+          </div>
+
+          <div id="addPanel" class="panel form-panel hidden">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Create</p>
+                <h2>新增 profile</h2>
+              </div>
+            </div>
+            <form id="addForm" class="form-grid">
+              <label>
+                Profile ID
+                <input name="profileId" autocomplete="off" required placeholder="personal" />
+              </label>
+              <label>
+                显示名称
+                <input name="displayName" autocomplete="off" placeholder="Personal" />
+              </label>
+              <label>
+                邮箱
+                <input name="email" autocomplete="off" type="email" placeholder="name@example.com" />
+              </label>
+              <label>
+                Workspace
+                <input name="workspaceName" autocomplete="off" placeholder="default" />
+              </label>
+              <div class="form-actions">
+                <button class="secondary-button" type="button" id="cancelAddButton">取消</button>
+                <button class="primary-button" type="submit">保存</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel form-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Import</p>
+                <h2>导入 auth.json</h2>
+              </div>
+            </div>
+            <form id="importForm" class="form-grid">
+              <label>
+                auth.json
+                <input name="authFile" type="file" accept=".json,application/json" required />
+              </label>
+              <label>
+                Profile ID
+                <input name="profileId" autocomplete="off" required placeholder="work" />
+              </label>
+              <label>
+                显示名称
+                <input name="displayName" autocomplete="off" placeholder="Work" />
+              </label>
+              <label>
+                Workspace
+                <input name="workspaceName" autocomplete="off" placeholder="company" />
+              </label>
+              <label class="toggle-row wide">
+                <input name="useAfterImport" type="checkbox" />
+                <span>导入后立即切换</span>
+              </label>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">
+                  <span aria-hidden="true">↓</span>
+                  导入
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel form-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Metadata</p>
+                <h2>Profile 信息</h2>
+              </div>
+            </div>
+            <form id="editForm" class="form-grid">
+              <label>
+                显示名称
+                <input name="displayName" autocomplete="off" disabled />
+              </label>
+              <label>
+                邮箱
+                <input name="email" autocomplete="off" type="email" disabled />
+              </label>
+              <label>
+                Workspace
+                <input name="workspaceName" autocomplete="off" disabled />
+              </label>
+              <label>
+                计划
+                <input name="planType" autocomplete="off" disabled />
+              </label>
+              <label class="wide">
+                标签
+                <input name="tags" autocomplete="off" disabled placeholder="dev, work" />
+              </label>
+              <label class="wide">
+                备注
+                <textarea name="notes" rows="3" disabled></textarea>
+              </label>
+              <div class="form-actions split-actions">
+                <button id="deleteButton" class="danger-button" type="button" disabled>删除</button>
+                <button class="primary-button" type="submit" disabled>保存信息</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel tools-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Tools</p>
+                <h2>文件操作</h2>
+              </div>
+            </div>
+            <div class="button-row wrap">
+              <button id="backupButton" class="secondary-button" type="button">备份 auth.json</button>
+              <button id="exportButton" class="secondary-button" type="button">导出 metadata</button>
+            </div>
+            <div id="toolOutput" class="tool-output"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

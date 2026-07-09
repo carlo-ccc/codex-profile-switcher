@@ -20,6 +20,7 @@ Implemented:
 
 - CLI commands for `add`, `list`, `current`, `use`, `remove`, `rename`, `status`, `doctor`, `backup`, `restore`, and metadata `export`
 - `import-auth` for importing an existing Codex `auth.json`
+- Local web GUI for listing, importing, editing, switching, backing up, and exporting metadata
 - System secure storage for auth secrets:
   - macOS Keychain
   - Windows Credential Manager
@@ -96,6 +97,7 @@ codex-profile use personal
 codex-profile use work
 codex-profile status
 codex-profile doctor
+codex-profile gui
 ```
 
 After switching, open a new terminal window or restart Codex CLI before continuing.
@@ -114,10 +116,27 @@ codex-profile remove personal --yes
 codex-profile rename personal main
 codex-profile status
 codex-profile doctor
+codex-profile gui [--port 8787]
 codex-profile backup
 codex-profile restore <backup-path>
 codex-profile export --output metadata.json
 ```
+
+## Local GUI
+
+Start the local visual interface:
+
+```bash
+npm run gui
+```
+
+Or with the linked CLI:
+
+```bash
+codex-profile gui --port 8787
+```
+
+Then open the printed local URL. The GUI uses the same core logic as the CLI and keeps switching manual: it can import `auth.json`, show profile/status/doctor information, edit metadata, create backups, export metadata, and switch only when you click the switch button.
 
 The following commands are intentionally not provided:
 
@@ -182,6 +201,6 @@ CODEX_PROFILE_TEST_STORE=1
 
 Do not use that setting for real credentials.
 
-## GUI Plan
+## Desktop GUI Plan
 
-The MVP is CLI-first. A Tauri + React + TypeScript desktop GUI plan is documented in [docs/gui-roadmap.md](docs/gui-roadmap.md).
+The repository now includes a zero-dependency local web GUI. A future Tauri + React + TypeScript desktop GUI plan is documented in [docs/gui-roadmap.md](docs/gui-roadmap.md).

@@ -105,6 +105,9 @@ export async function runCli(argv, io = {}) {
       case "doctor":
         await doctorCommand(context);
         return 0;
+      case "gui":
+        await guiCommand(context);
+        return 0;
       case "backup":
         await backupCommand(context);
         return 0;
@@ -333,6 +336,16 @@ async function doctorCommand({ metadataStore, secureStore, stdout, env }) {
   stdout.write(formatDoctorReport(report));
 }
 
+async function guiCommand({ env, stdout, options }) {
+  const { runGuiServer } = await import("./gui/server.js");
+  await runGuiServer({
+    env,
+    stdout,
+    host: options.host || "127.0.0.1",
+    port: options.port || 8787,
+  });
+}
+
 async function backupCommand({ env, stdout, options }) {
   await ensurePolicyAcknowledged({
     env,
@@ -506,6 +519,7 @@ Commands:
   codex-profile rename old-id new-id
   codex-profile status
   codex-profile doctor
+  codex-profile gui [--port 8787]
   codex-profile backup
   codex-profile restore <backup-path>
   codex-profile export [--output metadata.json]
