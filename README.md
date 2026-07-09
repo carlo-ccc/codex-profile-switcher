@@ -21,6 +21,7 @@ Implemented:
 - CLI commands for `add`, `list`, `current`, `use`, `remove`, `rename`, `status`, `doctor`, `backup`, `restore`, and metadata `export`
 - `import-auth` for importing an existing Codex `auth.json`
 - Local web GUI for listing, importing, editing, switching, backing up, and exporting metadata
+- Current active profile usage display in the local GUI
 - System secure storage for auth secrets:
   - macOS Keychain
   - Windows Credential Manager
@@ -35,7 +36,7 @@ Implemented:
 
 Not implemented:
 
-- Usage APIs
+- Usage pooling or total quota views
 - Warm-up
 - Auto rotation
 - Quota pooling
@@ -136,7 +137,9 @@ Or with the linked CLI:
 codex-profile gui --port 8787
 ```
 
-Then open the printed local URL. The GUI uses the same core logic as the CLI and keeps switching manual: it can import `auth.json`, show profile/status/doctor information, edit metadata, create backups, export metadata, and switch only when you click the switch button.
+Then open the printed local URL. The GUI uses the same core logic as the CLI and keeps switching manual: it can import `auth.json`, show profile/status/doctor information, show the current active profile's separate usage, edit metadata, create backups, export metadata, and switch only when you click the switch button.
+
+The usage panel refreshes only the active profile while the GUI is open. It does not poll inactive profiles, total usage across profiles, or choose a profile based on remaining usage.
 
 The following commands are intentionally not provided:
 

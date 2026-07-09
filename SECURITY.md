@@ -53,9 +53,7 @@ If you find a security issue, do not include real tokens, cookies, `auth.json` c
 This tool must not be used for:
 
 - account sharing
-- quota pooling
 - automatic account rotation
 - continuing one task across accounts after a usage limit
 - bypassing rate limits or usage limits
 - background polling to find an available account
-- warm-up or preload requests

@@ -5,6 +5,7 @@ import { commandExists, execFileText, spawnWithInput } from "./command.js";
 import { AppError } from "./errors.js";
 
 const SERVICE = "codex-profile-switcher";
+const ENCODED_SECRET_PREFIX = "cps-v1:";
 
 export class SecureStore {
   constructor(env = process.env) {
@@ -50,9 +51,10 @@ export class SecureStore {
 
   async set(profileId, secret) {
     await this.assertAvailable();
+    const encodedSecret = encodeSecret(secret);
 
     if (this.env.CODEX_PROFILE_TEST_STORE === "1") {
-      await writeTestSecret(this.env, profileId, secret);
+      await writeTestSecret(this.env, profileId, encodedSecret);
       return;
     }
     if (process.platform === "darwin") {
@@ -63,13 +65,13 @@ export class SecureStore {
         "-s",
         SERVICE,
         "-w",
-        secret,
+        encodedSecret,
         "-U",
       ]);
       return;
     }
     if (process.platform === "win32") {
-      await runWindowsCredentialCommand("set", profileId, secret);
+      await runWindowsCredentialCommand("set", profileId, encodedSecret);
       return;
     }
 
@@ -86,7 +88,7 @@ export class SecureStore {
         "kind",
         "auth",
       ],
-      secret,
+      encodedSecret,
     );
   }
 
@@ -98,27 +100,27 @@ export class SecureStore {
       if (!(profileId in secrets)) {
         throw new AppError("SECURE_SECRET_NOT_FOUND", `No auth secret stored for "${profileId}".`);
       }
-      return secrets[profileId];
+      return decodeSecret(secrets[profileId]);
     }
     if (process.platform === "darwin") {
-      return execFileText("security", [
+      return decodeSecret(await execFileText("security", [
         "find-generic-password",
         "-a",
         profileId,
         "-s",
         SERVICE,
         "-w",
-      ]);
+      ]));
     }
     if (process.platform === "win32") {
-      return runWindowsCredentialCommand("get", profileId);
+      return decodeSecret(await runWindowsCredentialCommand("get", profileId));
     }
 
-    return spawnWithInput(
+    return decodeSecret(await spawnWithInput(
       "secret-tool",
       ["lookup", "application", SERVICE, "profile", profileId, "kind", "auth"],
       "",
-    );
+    ));
   }
 
   async delete(profileId) {
@@ -176,6 +178,40 @@ async function writeTestSecret(env, profileId, secret) {
   const secrets = (await pathExists(storePath)) ? await readJson(storePath, {}) : {};
   secrets[profileId] = secret;
   await writeJsonAtomic(storePath, secrets, 0o600);
+}
+
+function encodeSecret(secret) {
+  return `${ENCODED_SECRET_PREFIX}${Buffer.from(String(secret), "utf8").toString("base64url")}`;
+}
+
+function decodeSecret(secret) {
+  const text = String(secret);
+  const compact = text.trim();
+
+  if (compact.startsWith(ENCODED_SECRET_PREFIX)) {
+    return Buffer.from(compact.slice(ENCODED_SECRET_PREFIX.length), "base64url").toString("utf8");
+  }
+
+  const legacyMacOsHex = decodeLegacyMacOsHex(compact);
+  return legacyMacOsHex || text;
+}
+
+function decodeLegacyMacOsHex(value) {
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(value)) {
+    return null;
+  }
+
+  const decoded = Buffer.from(value, "hex").toString("utf8");
+  if (!decoded.trimStart().startsWith("{")) {
+    return null;
+  }
+
+  try {
+    JSON.parse(decoded);
+    return decoded;
+  } catch {
+    return null;
+  }
 }
 
 async function runWindowsCredentialCommand(action, profileId, secret = "") {

@@ -24,12 +24,22 @@ const dom = {
   switchButton: document.querySelector("#switchButton"),
   toast: document.querySelector("#toast"),
   toolOutput: document.querySelector("#toolOutput"),
+  usageBadge: document.querySelector("#usageBadge"),
+  usageGrid: document.querySelector("#usageGrid"),
+  usageRefreshButton: document.querySelector("#usageRefreshButton"),
+  usageUpdated: document.querySelector("#usageUpdated"),
 };
+
+const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 let guiState = null;
 let selectedProfileId = null;
+let usageState = null;
+let usageInFlight = false;
+let usageRequestId = 0;
 
 dom.refreshButton.addEventListener("click", () => loadState());
+dom.usageRefreshButton.addEventListener("click", () => loadUsage({ notify: true }));
 dom.ackCheckbox.addEventListener("input", () => {
   dom.ackButton.disabled = !dom.ackCheckbox.checked;
 });
@@ -48,6 +58,11 @@ dom.backupButton.addEventListener("click", () => backupAuth());
 dom.exportButton.addEventListener("click", () => exportMetadata());
 
 loadState();
+window.setInterval(() => {
+  if (!document.hidden) {
+    loadUsage({ quiet: true });
+  }
+}, USAGE_REFRESH_INTERVAL_MS);
 
 async function loadState() {
   try {
@@ -58,7 +73,50 @@ async function loadState() {
   }
 }
 
+async function loadUsage(options = {}) {
+  const requestId = usageRequestId + 1;
+  usageRequestId = requestId;
+  usageInFlight = true;
+  usageState ||= {
+    status: "loading",
+    message: "额度信息加载中",
+    profileId: guiState?.activeProfileId || null,
+    fetchedAt: new Date().toISOString(),
+  };
+  renderUsage();
+
+  try {
+    const data = await api("/api/usage");
+    if (requestId !== usageRequestId) {
+      return;
+    }
+    usageState = data.usage;
+    if (options.notify) {
+      showToast(data.usage.status === "ok" ? "额度信息已更新" : data.usage.message || "额度信息不可用");
+    }
+  } catch (error) {
+    if (requestId !== usageRequestId) {
+      return;
+    }
+    usageState = {
+      status: "error",
+      message: error.message,
+      profileId: guiState?.activeProfileId || null,
+      fetchedAt: new Date().toISOString(),
+    };
+    if (!options.quiet) {
+      showToast(error.message, true);
+    }
+  } finally {
+    if (requestId === usageRequestId) {
+      usageInFlight = false;
+      renderUsage();
+    }
+  }
+}
+
 function applyState(nextState) {
+  const previousActiveProfileId = guiState ? guiState.activeProfileId || null : undefined;
   guiState = nextState;
   const profiles = guiState.profiles || [];
   const selectedStillExists = profiles.some((profile) => profile.profile_id === selectedProfileId);
@@ -66,6 +124,10 @@ function applyState(nextState) {
     selectedProfileId = guiState.activeProfileId || profiles[0]?.profile_id || null;
   }
   render();
+  if ((guiState.activeProfileId || null) !== previousActiveProfileId) {
+    usageState = null;
+    loadUsage({ quiet: true });
+  }
 }
 
 function render() {
@@ -82,6 +144,7 @@ function render() {
 
   renderProfiles(profiles);
   renderSelected(selectedProfile);
+  renderUsage();
   renderStatus();
 }
 
@@ -169,6 +232,44 @@ function renderStatus() {
     );
     dom.processList.append(row);
   }
+}
+
+function renderUsage() {
+  const usage = usageState || {
+    status: "loading",
+    message: "额度信息加载中",
+    profileId: guiState?.activeProfileId || null,
+    fetchedAt: null,
+  };
+  const hasActiveProfile = Boolean(guiState?.activeProfileId);
+
+  dom.usageRefreshButton.disabled = usageInFlight || !hasActiveProfile;
+  dom.usageRefreshButton.textContent = usageInFlight ? "刷新中" : "刷新额度";
+
+  const badge = usageBadge(usage);
+  dom.usageBadge.textContent = badge.text;
+  setBadge(dom.usageBadge, badge.kind);
+
+  dom.usageGrid.replaceChildren();
+  if (usage.status === "ok") {
+    dom.usageGrid.append(
+      usageItem("5 小时窗口", formatWindowMain(usage.primary), formatWindowDetail(usage.primary)),
+      usageItem("周窗口", formatWindowMain(usage.secondary), formatWindowDetail(usage.secondary)),
+      usageItem("Credits", formatCredits(usage.credits), usage.credits ? "来自当前 active profile" : ""),
+      usageItem("计划", usage.planType || "-", usage.profileDisplayName || usage.profileId || ""),
+    );
+  } else {
+    dom.usageGrid.append(
+      usageItem("当前 profile", usage.profileDisplayName || usage.profileId || guiState?.activeProfileId || "-"),
+      usageItem("状态", usage.message || "等待刷新"),
+      usageItem("刷新间隔", "5 分钟", "仅在 GUI 打开时刷新当前 active profile"),
+      usageItem("来源", "ChatGPT usage", "不会合并多个 profile 的额度"),
+    );
+  }
+
+  dom.usageUpdated.textContent = usage.fetchedAt
+    ? `上次刷新：${formatDate(usage.fetchedAt)}`
+    : "等待刷新";
 }
 
 async function acknowledgeBoundary() {
@@ -377,6 +478,80 @@ function statusItem(label, value) {
   const item = element("div", "status-item");
   item.append(textNode("span", label), textNode("strong", value || "-"));
   return item;
+}
+
+function usageItem(label, value, detail = "") {
+  const item = element("div", "usage-item");
+  item.append(textNode("span", label), textNode("strong", value || "-"));
+  if (detail) {
+    item.append(textNode("small", detail));
+  }
+  return item;
+}
+
+function usageBadge(usage) {
+  if (usageInFlight) {
+    return { text: "刷新中", kind: "neutral" };
+  }
+
+  switch (usage.status) {
+    case "ok":
+      return { text: "已更新", kind: "good" };
+    case "inactive":
+      return { text: "未切换", kind: "neutral" };
+    case "unavailable":
+      return { text: "不可用", kind: "warn" };
+    case "error":
+      return { text: "获取失败", kind: "bad" };
+    default:
+      return { text: "未加载", kind: "neutral" };
+  }
+}
+
+function formatWindowMain(windowInfo) {
+  if (!windowInfo || windowInfo.usedPercent === null) {
+    return "-";
+  }
+  return `${formatPercent(windowInfo.usedPercent)} 已用`;
+}
+
+function formatWindowDetail(windowInfo) {
+  if (!windowInfo) {
+    return "";
+  }
+
+  const details = [];
+  if (windowInfo.remainingPercent !== null) {
+    details.push(`剩余 ${formatPercent(windowInfo.remainingPercent)}`);
+  }
+  if (windowInfo.windowMinutes !== null) {
+    details.push(`${windowInfo.windowMinutes} 分钟窗口`);
+  }
+  if (windowInfo.resetsAt) {
+    details.push(`重置 ${formatDate(windowInfo.resetsAt)}`);
+  }
+  return details.join(" · ");
+}
+
+function formatCredits(credits) {
+  if (!credits) {
+    return "-";
+  }
+  if (credits.unlimited) {
+    return "无限";
+  }
+  if (credits.hasCredits === false) {
+    return "无";
+  }
+  return credits.balance || "有";
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  const number = Number(value);
+  return `${Number.isInteger(number) ? number : number.toFixed(1)}%`;
 }
 
 function setBadge(node, kind) {

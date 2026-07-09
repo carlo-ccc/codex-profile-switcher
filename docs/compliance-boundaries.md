@@ -8,6 +8,7 @@ Allowed:
 - Import one profile's `auth.json` into system secure storage
 - Manually switch the local Codex auth context
 - View each profile's separate metadata and last-used time
+- View the current active profile's separate usage while the GUI is open
 - Run doctor diagnostics for local files, secure storage, and process state
 - Back up and restore local `auth.json`
 
@@ -22,6 +23,7 @@ Not allowed:
 - Warm up all accounts
 - Run scheduled warm-up requests
 - Poll accounts in the background to find available usage
+- Poll inactive profiles or choose a profile based on remaining usage
 
 Required user-facing boundary text:
 

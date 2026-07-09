@@ -166,6 +166,7 @@ textarea:disabled {
 }
 
 .action-panel,
+.usage-panel,
 .status-panel,
 .tools-panel {
   grid-column: 1 / -1;
@@ -242,14 +243,16 @@ textarea:disabled {
 }
 
 .summary-grid,
-.status-grid {
+.status-grid,
+.usage-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
 .summary-item,
-.status-item {
+.status-item,
+.usage-item {
   min-height: 78px;
   padding: 12px;
   border: 1px solid var(--line);
@@ -258,7 +261,8 @@ textarea:disabled {
 }
 
 .summary-item span,
-.status-item span {
+.status-item span,
+.usage-item span {
   display: block;
   margin-bottom: 8px;
   color: var(--muted);
@@ -266,15 +270,36 @@ textarea:disabled {
 }
 
 .summary-item strong,
-.status-item strong {
+.status-item strong,
+.usage-item strong {
   display: block;
   overflow-wrap: anywhere;
   line-height: 1.28;
 }
 
+.usage-item small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .action-panel .button-row,
 .tools-panel .button-row {
   margin-top: 16px;
+}
+
+.usage-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.usage-updated {
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .process-list {
@@ -498,7 +523,8 @@ textarea:focus {
   .main-grid,
   .form-grid,
   .summary-grid,
-  .status-grid {
+  .status-grid,
+  .usage-grid {
     grid-template-columns: 1fr;
   }
 
@@ -507,7 +533,8 @@ textarea:focus {
   }
 
   .form-actions,
-  .split-actions {
+  .split-actions,
+  .usage-footer {
     flex-direction: column-reverse;
   }
 

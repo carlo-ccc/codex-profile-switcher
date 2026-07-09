@@ -11,6 +11,7 @@ import { assertSwitchCanProceed, detectCodexProcesses } from "../core/process-de
 import { redactText } from "../core/redaction.js";
 import { normalizeTags } from "../core/profile-id.js";
 import { SecureStore } from "../core/secure-store.js";
+import { getActiveProfileUsage } from "../core/usage.js";
 import {
   appHome,
   authJsonPath,
@@ -111,6 +112,12 @@ async function handleApiRequest(request, response, requestUrl, context) {
   if (method === "GET" && route[0] === "doctor") {
     const report = await collectDoctorReport(stores);
     sendJson(response, 200, { ok: true, report });
+    return;
+  }
+
+  if (method === "GET" && route[0] === "usage") {
+    const usage = await getActiveProfileUsage(stores);
+    sendJson(response, 200, { ok: true, usage });
     return;
   }
 
