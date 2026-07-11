@@ -17,6 +17,26 @@ export async function importAuthJson(filePath, profileId, options) {
   return importAuthJsonString(raw, profileId, options);
 }
 
+export async function importCurrentAuthJson(profileId, options) {
+  const { env = process.env } = options;
+  const currentAuthPath = authJsonPath(env);
+  if (!(await pathExists(currentAuthPath))) {
+    throw new AppError(
+      "AUTH_JSON_NOT_FOUND",
+      `No active Codex auth.json found at ${currentAuthPath}. Run "codex login" first, then capture the current auth again.`,
+      { exitCode: 2 },
+    );
+  }
+
+  return importAuthJson(currentAuthPath, profileId, {
+    ...options,
+    profile: {
+      ...options.profile,
+      auth_source: "current_codex_auth_json",
+    },
+  });
+}
+
 export async function importAuthJsonString(authContent, profileId, options) {
   const { metadataStore, secureStore, profile = {} } = options;
   let parsed;
@@ -44,7 +64,7 @@ export async function importAuthJsonString(authContent, profileId, options) {
         findFirstValueByKey(parsed, ["workspace_name", "workspace"]) ||
         "",
       plan_type: profile.plan_type || "",
-      auth_source: "imported_auth_json",
+      auth_source: profile.auth_source || "imported_auth_json",
       auth_secret_ref: createSecretRef(profileId),
       notes: profile.notes || "",
       tags: profile.tags || [],

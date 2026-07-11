@@ -44,6 +44,31 @@ export async function spawnWithInput(command, args, input, options = {}) {
   });
 }
 
+export async function spawnInteractive(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: "inherit",
+      ...options,
+    });
+
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const error = new Error(
+        signal
+          ? `${command} was stopped by ${signal}`
+          : `${command} exited with ${code ?? "an unknown status"}`,
+      );
+      error.code = code;
+      reject(error);
+    });
+  });
+}
+
 export async function commandExists(command) {
   const probe = process.platform === "win32" ? "where" : "which";
   const args = [command];

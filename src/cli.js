@@ -9,9 +9,14 @@ import {
   backupAuthJson,
   getAuthFileStatus,
   importAuthJson,
+  importCurrentAuthJson,
   restoreAuthJson,
   switchProfile,
 } from "./core/auth.js";
+import {
+  loginProfileWithCodex,
+  refreshProfileAuthWithCodex,
+} from "./core/codex-login.js";
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.js";
 import { detectCodexProcesses, assertSwitchCanProceed } from "./core/process-detect.js";
 import {
@@ -89,6 +94,16 @@ export async function runCli(argv, io = {}) {
         return 0;
       case "import-auth":
         await importAuthCommand(context);
+        return 0;
+      case "capture-current":
+        await captureCurrentCommand(context);
+        return 0;
+      case "login":
+        await loginCommand(context);
+        return 0;
+      case "refresh-auth":
+      case "reauth":
+        await refreshAuthCommand(context);
         return 0;
       case "use":
         await useCommand(context);
@@ -231,6 +246,100 @@ async function importAuthCommand(context) {
     stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
   } else {
     stdout.write(`Run "codex-profile use ${imported.profile_id}" to switch manually.\n`);
+  }
+}
+
+async function captureCurrentCommand(context) {
+  const { args, options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+
+  const profileId = options.name || args[0];
+  requireArgument(
+    profileId,
+    "Profile name is required. Example: codex-profile capture-current personal",
+  );
+
+  const captured = await importCurrentAuthJson(profileId, {
+    env,
+    metadataStore,
+    secureStore,
+    profile: {
+      display_name: options["display-name"] || options.display || profileId,
+      email: options.email,
+      workspace_name: options.workspace,
+      plan_type: options.plan,
+      notes: options.notes,
+      tags: normalizeTags(options.tag || options.tags),
+    },
+  });
+
+  stdout.write(`Captured current Codex auth.json for "${captured.profile_id}" into secure storage.\n`);
+  stdout.write("Do not run codex logout for a captured account unless you intend to invalidate that login session.\n");
+
+  if (options.use) {
+    await metadataStore.setActiveProfile(profileId);
+    stdout.write(`Marked "${captured.profile_id}" as the active profile metadata.\n`);
+  } else {
+    stdout.write(`Run "codex-profile use ${captured.profile_id}" to switch manually later.\n`);
+  }
+}
+
+async function loginCommand(context) {
+  const { args, options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+
+  const profileId = options.name || args[0];
+  requireArgument(profileId, "Profile name is required. Example: codex-profile login personal");
+
+  stdout.write(`Starting native Codex login for "${profileId}" in an isolated temporary session.\n`);
+  const profile = await loginProfileWithCodex(profileId, {
+    env,
+    metadataStore,
+    secureStore,
+    deviceAuth: Boolean(options["device-auth"]),
+    profile: profileMetadataFromOptions(options, profileId, { includeDisplayName: true }),
+  });
+  stdout.write(`Saved the Codex login for "${profile.profile_id}" into secure storage.\n`);
+
+  if (options.use) {
+    const result = await switchProfile(profileId, switchOptions(context));
+    stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
+  } else {
+    stdout.write(`Run "codex-profile use ${profile.profile_id}" to switch manually.\n`);
+  }
+}
+
+async function refreshAuthCommand(context) {
+  const { args, options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+
+  const profileId = options.name || args[0];
+  requireArgument(profileId, "Profile name is required. Example: codex-profile refresh-auth personal");
+
+  stdout.write(`Refreshing "${profileId}" through native Codex login in an isolated temporary session.\n`);
+  const profile = await refreshProfileAuthWithCodex(profileId, {
+    env,
+    metadataStore,
+    secureStore,
+    deviceAuth: Boolean(options["device-auth"]),
+    profile: profileMetadataFromOptions(options, profileId),
+  });
+  stdout.write(`Updated the saved login for "${profile.profile_id}" in secure storage.\n`);
+
+  if (options.use) {
+    const result = await switchProfile(profileId, switchOptions(context));
+    stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
+  } else {
+    stdout.write("The current Codex auth.json was not changed.\n");
   }
 }
 
@@ -413,6 +522,32 @@ function switchOptions(context) {
   };
 }
 
+function profileMetadataFromOptions(options, profileId, { includeDisplayName = false } = {}) {
+  const profile = {};
+  const displayName = options["display-name"] || options.display;
+  if (displayName) {
+    profile.display_name = displayName;
+  } else if (includeDisplayName) {
+    profile.display_name = profileId;
+  }
+  if (options.email !== undefined) {
+    profile.email = options.email;
+  }
+  if (options.workspace !== undefined) {
+    profile.workspace_name = options.workspace;
+  }
+  if (options.plan !== undefined) {
+    profile.plan_type = options.plan;
+  }
+  if (options.notes !== undefined) {
+    profile.notes = options.notes;
+  }
+  if (options.tag !== undefined || options.tags !== undefined) {
+    profile.tags = normalizeTags(options.tag || options.tags);
+  }
+  return profile;
+}
+
 function switchSuccessText(profileId, authPath) {
   return [
     `Switched to profile "${profileId}".`,
@@ -514,6 +649,9 @@ Commands:
   codex-profile current
   codex-profile add <profile_id> [--email user@example.com]
   codex-profile import-auth ./auth.json --name personal [--use]
+  codex-profile capture-current personal [--use]
+  codex-profile login personal [--device-auth] [--use]
+  codex-profile refresh-auth personal [--device-auth] [--use]
   codex-profile use personal
   codex-profile remove personal --yes
   codex-profile rename old-id new-id

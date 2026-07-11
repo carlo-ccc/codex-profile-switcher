@@ -20,6 +20,8 @@ Implemented:
 
 - CLI commands for `add`, `list`, `current`, `use`, `remove`, `rename`, `status`, `doctor`, `backup`, `restore`, and metadata `export`
 - `import-auth` for importing an existing Codex `auth.json`
+- `capture-current` for saving the currently active Codex `auth.json`
+- Native `codex login` capture and profile-specific credential refresh in an isolated temporary Codex home
 - Local web GUI for listing, importing, editing, switching, backing up, and exporting metadata
 - Current active profile usage display in the local GUI
 - System secure storage for auth secrets:
@@ -91,6 +93,8 @@ You can also pass `--accept-boundary` to a mutating command in automation or tes
 ```bash
 codex-profile import-auth ./auth-personal.json --name personal
 codex-profile import-auth ./auth-work.json --name work
+# Or capture the currently logged-in Codex auth directly:
+codex-profile capture-current personal --use
 
 codex-profile list
 codex-profile current
@@ -99,6 +103,41 @@ codex-profile use work
 codex-profile status
 codex-profile doctor
 codex-profile gui
+```
+
+## Login And Refresh Flow
+
+Use the native Codex login flow to authenticate each account without touching the
+currently active `~/.codex/auth.json`. The temporary login directory is deleted
+after its `auth.json` has been saved to the system secure store.
+
+For accounts that may otherwise be auto-selected in the browser, add
+`--device-auth` and follow the code shown by Codex:
+
+```bash
+codex-profile login personal --device-auth --use
+codex-profile login work --device-auth
+
+codex-profile use work
+codex-profile use personal
+```
+
+To give one saved profile a chance to renew its native login, or to complete a
+new browser sign-in when needed, run:
+
+```bash
+codex-profile refresh-auth personal --device-auth
+```
+
+This does not change the active local Codex session unless `--use` is supplied.
+It relies on the installed Codex CLI to refresh or re-authenticate; this project
+does not call private OAuth token endpoints itself.
+
+`capture-current` remains useful for migrating an already logged-in local
+session into the secure store:
+
+```bash
+codex-profile capture-current personal --use
 ```
 
 After switching, open a new terminal window or restart Codex CLI before continuing.
@@ -112,6 +151,9 @@ codex-profile current
 codex-profile add <profile_id>
 codex-profile import-auth ./auth.json --name personal
 codex-profile import-auth ./auth.json --name personal --use
+codex-profile capture-current personal
+codex-profile login personal --device-auth
+codex-profile refresh-auth personal --device-auth
 codex-profile use personal
 codex-profile remove personal --yes
 codex-profile rename personal main
