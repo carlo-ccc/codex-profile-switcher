@@ -12,6 +12,7 @@ import { redactText } from "../core/redaction.js";
 import { normalizeTags } from "../core/profile-id.js";
 import { SecureStore } from "../core/secure-store.js";
 import { getActiveProfileUsage } from "../core/usage.js";
+import { startAuthSyncMonitor } from "../core/auth-sync.js";
 import {
   appHome,
   authJsonPath,
@@ -31,25 +32,44 @@ export async function startGuiServer(options = {}) {
   const env = options.env || process.env;
   const host = options.host || DEFAULT_HOST;
   const port = normalizePort(options.port ?? DEFAULT_PORT);
+  const monitorStores = {
+    env,
+    metadataStore: new MetadataStore(env),
+    secureStore: new SecureStore(env),
+  };
+  const syncMonitor =
+    options.syncMonitor ||
+    startAuthSyncMonitor({
+      ...monitorStores,
+      intervalMs: options.syncIntervalMs,
+    });
+  const ownsSyncMonitor = !options.syncMonitor;
   const server = http.createServer((request, response) => {
-    handleRequest(request, response, { env }).catch((error) => {
+    handleRequest(request, response, { env, syncMonitor }).catch((error) => {
       sendError(response, error);
     });
   });
 
-  await new Promise((resolve, reject) => {
-    const onListening = () => {
-      server.off("error", onError);
-      resolve();
-    };
-    const onError = (error) => {
-      server.off("listening", onListening);
-      reject(error);
-    };
-    server.once("listening", onListening);
-    server.once("error", onError);
-    server.listen(port, host);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      const onListening = () => {
+        server.off("error", onError);
+        resolve();
+      };
+      const onError = (error) => {
+        server.off("listening", onListening);
+        reject(error);
+      };
+      server.once("listening", onListening);
+      server.once("error", onError);
+      server.listen(port, host);
+    });
+  } catch (error) {
+    if (ownsSyncMonitor) {
+      await syncMonitor.stop();
+    }
+    throw error;
+  }
 
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
@@ -60,10 +80,15 @@ export async function startGuiServer(options = {}) {
     host,
     port: actualPort,
     url,
-    close: () =>
-      new Promise((resolve, reject) => {
+    syncMonitor,
+    close: async () => {
+      if (ownsSyncMonitor) {
+        await syncMonitor.stop();
+      }
+      await new Promise((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
-      }),
+      });
+    },
   };
 }
 
@@ -99,10 +124,10 @@ async function handleRequest(request, response, context) {
 async function handleApiRequest(request, response, requestUrl, context) {
   const route = routeParts(requestUrl.pathname);
   const method = request.method || "GET";
-  const { env } = context;
+  const { env, syncMonitor } = context;
   const metadataStore = new MetadataStore(env);
   const secureStore = new SecureStore(env);
-  const stores = { env, metadataStore, secureStore };
+  const stores = { env, metadataStore, secureStore, syncMonitor };
 
   if (method === "GET" && route[0] === "state") {
     sendJson(response, 200, { ok: true, state: await collectGuiState(stores) });
@@ -118,6 +143,17 @@ async function handleApiRequest(request, response, requestUrl, context) {
   if (method === "GET" && route[0] === "usage") {
     const usage = await getActiveProfileUsage(stores);
     sendJson(response, 200, { ok: true, usage });
+    return;
+  }
+
+  if (method === "POST" && route[0] === "sync-active") {
+    await ensurePolicyAcknowledged({ env });
+    const authSync = await syncMonitor.runNow();
+    sendJson(response, 200, {
+      ok: true,
+      authSync,
+      state: await collectGuiState(stores),
+    });
     return;
   }
 
@@ -280,12 +316,14 @@ async function switchProfileForGui(profileId, stores, body = {}) {
     metadataStore: stores.metadataStore,
     secureStore: stores.secureStore,
     allowRunning: Boolean(body.allowRunning || body.allow_running),
+    refreshSavedAuth: !(body.noRefresh || body.no_refresh),
     stdout: {
       write(text) {
         output.push(String(text));
       },
     },
   });
+  await stores.syncMonitor?.runNow();
 
   return {
     profileId: result.profile.profile_id,
@@ -295,7 +333,7 @@ async function switchProfileForGui(profileId, stores, body = {}) {
   };
 }
 
-async function collectGuiState({ env, metadataStore, secureStore }) {
+async function collectGuiState({ env, metadataStore, secureStore, syncMonitor }) {
   const metadata = await metadataStore.read();
   const policy = await readPolicy(env);
   const [authStatus, processes, secureAvailable, secureBackend, doctor] = await Promise.all([
@@ -324,6 +362,7 @@ async function collectGuiState({ env, metadataStore, secureStore }) {
       available: secureAvailable,
       backend: secureBackend,
     },
+    authSync: syncMonitor?.getStatus() || null,
     doctor,
   };
 }

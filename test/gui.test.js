@@ -58,6 +58,10 @@ test("imports auth through the GUI API and switches manually", async (t) => {
     await fs.readFile(path.join(workspace.codexDir, "auth.json"), "utf8"),
   );
   assert.equal(activeAuth.access_token, "sk-guiimportsecretabcd");
+
+  const synced = await postJson(gui.url, "/api/sync-active", {});
+  assert.equal(synced.status, 200);
+  assert.equal(synced.body.authSync.status, "current");
 });
 
 test("reports current active profile usage through the GUI API", async (t) => {

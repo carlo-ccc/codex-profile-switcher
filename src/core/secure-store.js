@@ -6,6 +6,8 @@ import { AppError } from "./errors.js";
 
 const SERVICE = "codex-profile-switcher";
 const ENCODED_SECRET_PREFIX = "cps-v1:";
+const WINDOWS_CHUNK_MANIFEST_PREFIX = "cps-chunks-v1:";
+const WINDOWS_CREDENTIAL_CHUNK_CHARS = 1_000;
 
 export class SecureStore {
   constructor(env = process.env) {
@@ -71,7 +73,7 @@ export class SecureStore {
       return;
     }
     if (process.platform === "win32") {
-      await runWindowsCredentialCommand("set", profileId, encodedSecret);
+      await setWindowsCredential(profileId, encodedSecret);
       return;
     }
 
@@ -113,7 +115,7 @@ export class SecureStore {
       ]));
     }
     if (process.platform === "win32") {
-      return decodeSecret(await runWindowsCredentialCommand("get", profileId));
+      return decodeSecret(await getWindowsCredential(profileId));
     }
 
     return decodeSecret(await spawnWithInput(
@@ -148,11 +150,7 @@ export class SecureStore {
       return;
     }
     if (process.platform === "win32") {
-      try {
-        await runWindowsCredentialCommand("delete", profileId);
-      } catch {
-        // Already absent is fine for profile removal.
-      }
+      await deleteWindowsCredential(profileId);
       return;
     }
 
@@ -216,7 +214,7 @@ function decodeLegacyMacOsHex(value) {
 
 async function runWindowsCredentialCommand(action, profileId, secret = "") {
   const shell = (await commandExists("powershell.exe")) ? "powershell.exe" : "pwsh";
-  const target = `${SERVICE}:${profileId}:auth`;
+  const target = `${SERVICE}:${profileId}`;
   const script = windowsCredentialScript(action, target, secret);
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   return execFileText(shell, [
@@ -227,6 +225,70 @@ async function runWindowsCredentialCommand(action, profileId, secret = "") {
     "-EncodedCommand",
     encoded,
   ]);
+}
+
+async function setWindowsCredential(profileId, encodedSecret) {
+  const chunks = [];
+  for (let index = 0; index < encodedSecret.length; index += WINDOWS_CREDENTIAL_CHUNK_CHARS) {
+    chunks.push(encodedSecret.slice(index, index + WINDOWS_CREDENTIAL_CHUNK_CHARS));
+  }
+
+  const previousChunkCount = await getWindowsChunkCount(profileId);
+  for (let index = 0; index < chunks.length; index += 1) {
+    await runWindowsCredentialCommand("set", `${profileId}:chunk:${index}`, chunks[index]);
+  }
+  await runWindowsCredentialCommand(
+    "set",
+    `${profileId}:auth`,
+    `${WINDOWS_CHUNK_MANIFEST_PREFIX}${chunks.length}`,
+  );
+
+  for (let index = chunks.length; index < previousChunkCount; index += 1) {
+    await runWindowsCredentialCommand("delete", `${profileId}:chunk:${index}`).catch(() => {});
+  }
+}
+
+async function getWindowsCredential(profileId) {
+  const stored = await runWindowsCredentialCommand("get", `${profileId}:auth`);
+  const chunkCount = parseWindowsChunkManifest(stored);
+  if (chunkCount === null) {
+    return stored;
+  }
+
+  const chunks = [];
+  for (let index = 0; index < chunkCount; index += 1) {
+    chunks.push(await runWindowsCredentialCommand("get", `${profileId}:chunk:${index}`));
+  }
+  return chunks.join("");
+}
+
+async function deleteWindowsCredential(profileId) {
+  const chunkCount = await getWindowsChunkCount(profileId);
+  await runWindowsCredentialCommand("delete", `${profileId}:auth`).catch(() => {});
+  for (let index = 0; index < chunkCount; index += 1) {
+    await runWindowsCredentialCommand("delete", `${profileId}:chunk:${index}`).catch(() => {});
+  }
+}
+
+async function getWindowsChunkCount(profileId) {
+  try {
+    const stored = await runWindowsCredentialCommand("get", `${profileId}:auth`);
+    return parseWindowsChunkManifest(stored) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function parseWindowsChunkManifest(value) {
+  const text = String(value).trim();
+  if (!text.startsWith(WINDOWS_CHUNK_MANIFEST_PREFIX)) {
+    return null;
+  }
+  const count = Number(text.slice(WINDOWS_CHUNK_MANIFEST_PREFIX.length));
+  if (!Number.isInteger(count) || count <= 0 || count > 128) {
+    throw new AppError("SECURE_STORE_CORRUPT", "Windows credential chunk manifest is invalid.");
+  }
+  return count;
 }
 
 function psSingleQuote(value) {

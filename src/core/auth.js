@@ -11,6 +11,8 @@ import {
 import { AppError } from "./errors.js";
 import { createSecretRef } from "./metadata-store.js";
 import { assertSwitchCanProceed } from "./process-detect.js";
+import { ensureProfileAuthFresh } from "./token-refresh.js";
+import { assertFileCredentialStoreCompatible } from "./codex-config.js";
 
 export async function importAuthJson(filePath, profileId, options) {
   const raw = await fs.readFile(filePath, "utf8");
@@ -87,8 +89,11 @@ export async function switchProfile(profileId, options) {
     allowRunning = false,
     forceClose = false,
     confirmForceClose = false,
+    refreshSavedAuth = true,
+    fetchImpl = globalThis.fetch,
   } = options;
 
+  await assertFileCredentialStoreCompatible(env);
   await assertSwitchCanProceed({
     env,
     allowRunning,
@@ -105,8 +110,21 @@ export async function switchProfile(profileId, options) {
     );
   }
 
-  const authContent = await secureStore.get(profileId);
+  let authContent = await secureStore.get(profileId);
   validateAuthJsonString(authContent);
+
+  if (refreshSavedAuth) {
+    const prepared = await ensureProfileAuthFresh(profileId, {
+      env,
+      metadataStore,
+      secureStore,
+      fetchImpl,
+    });
+    authContent = prepared.authContent;
+    if (prepared.refreshed) {
+      stdout?.write?.(`Refreshed the saved OAuth login for "${profileId}" before switching.\n`);
+    }
+  }
 
   const authPath = authJsonPath(env);
   stdout?.write?.(`Will update: ${authPath}\n`);
@@ -155,6 +173,7 @@ export async function backupAuthJson(env = process.env) {
 }
 
 export async function restoreAuthJson(backupPath, env = process.env) {
+  await assertFileCredentialStoreCompatible(env);
   if (!(await pathExists(backupPath))) {
     throw new AppError("BACKUP_NOT_FOUND", `Backup not found: ${backupPath}`, {
       exitCode: 2,

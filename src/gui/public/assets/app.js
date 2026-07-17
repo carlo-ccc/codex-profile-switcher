@@ -22,6 +22,7 @@ const dom = {
   selectedTitle: document.querySelector("#selectedTitle"),
   statusGrid: document.querySelector("#statusGrid"),
   switchButton: document.querySelector("#switchButton"),
+  syncButton: document.querySelector("#syncButton"),
   toast: document.querySelector("#toast"),
   toolOutput: document.querySelector("#toolOutput"),
   usageBadge: document.querySelector("#usageBadge"),
@@ -54,6 +55,7 @@ dom.importForm.addEventListener("submit", (event) => submitImport(event));
 dom.editForm.addEventListener("submit", (event) => submitEdit(event));
 dom.deleteButton.addEventListener("click", () => deleteSelectedProfile());
 dom.switchButton.addEventListener("click", () => switchSelectedProfile());
+dom.syncButton.addEventListener("click", () => syncActiveAuth());
 dom.backupButton.addEventListener("click", () => backupAuth());
 dom.exportButton.addEventListener("click", () => exportMetadata());
 
@@ -196,6 +198,8 @@ function renderSelected(profile) {
     summaryItem("邮箱", profile?.email || "-"),
     summaryItem("Workspace", profile?.workspace_name || "-"),
     summaryItem("Last Used", formatDate(profile?.last_used_at)),
+    summaryItem("登录同步", formatDate(profile?.auth_synced_at)),
+    summaryItem("Token 到期", formatDate(profile?.auth_expires_at)),
   );
 
   setEditFormEnabled(Boolean(profile));
@@ -207,6 +211,7 @@ function renderStatus() {
   const authStatus = guiState?.authStatus || {};
   const secureStorage = guiState?.secureStorage || {};
   const doctor = guiState?.doctor || {};
+  const authSync = guiState?.authSync || {};
 
   dom.processBadge.textContent = processes.length === 0 ? "进程空闲" : `${processes.length} 个进程`;
   setBadge(dom.processBadge, processes.length === 0 ? "good" : "warn");
@@ -216,9 +221,12 @@ function renderStatus() {
     statusItem("安全存储", secureStorage.available ? secureStorage.backend : "unavailable"),
     statusItem("Codex CLI", doctor.codexCliInstalled ? "found" : "not found"),
     statusItem("Profiles", String(guiState?.profileCount ?? 0)),
+    statusItem("登录同步", formatAuthSyncStatus(authSync)),
+    statusItem("同步检查", formatDate(authSync.checkedAt)),
     statusItem("Codex 目录", guiState?.paths?.codexHome || "-"),
     statusItem("Metadata", guiState?.paths?.metadata || "-"),
     statusItem("config.toml", doctor.configToml?.exists ? "found" : "missing"),
+    statusItem("Codex 凭据模式", doctor.credentialStore?.display || "Codex default"),
     statusItem("Node", doctor.node || "-"),
   );
 
@@ -379,6 +387,15 @@ async function backupAuth() {
     applyState(data.state);
     dom.toolOutput.textContent = data.backupPath ? `Backup: ${data.backupPath}` : "没有可备份的 auth.json";
     showToast("备份完成");
+  });
+}
+
+async function syncActiveAuth() {
+  await runAction(dom.syncButton, "同步中", async () => {
+    const data = await api("/api/sync-active", { method: "POST", body: {} });
+    applyState(data.state);
+    dom.toolOutput.textContent = data.authSync.message || "登录信息同步完成";
+    showToast(data.authSync.status === "synced" ? "新的登录信息已安全保存" : data.authSync.message);
   });
 }
 
@@ -564,6 +581,21 @@ function formatDate(value) {
     return "-";
   }
   return new Date(value).toLocaleString();
+}
+
+function formatAuthSyncStatus(authSync) {
+  const labels = {
+    starting: "启动中",
+    synced: "已保存更新",
+    current: "已是最新",
+    inactive: "无 active profile",
+    missing: "auth.json 缺失",
+    unavailable: "不可同步",
+    "identity-mismatch": "账号不匹配",
+    incompatible: "keyring/auto 模式不兼容",
+    error: "同步失败",
+  };
+  return labels[authSync?.status] || authSync?.status || "未启动";
 }
 
 function element(tagName, className = "") {

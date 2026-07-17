@@ -20,6 +20,13 @@ The metadata file must not contain:
 
 The CLI redacts token-like values in default error output and avoids printing imported auth contents.
 
+The active-session monitor verifies account identity before copying a changed
+`auth.json` into secure storage. An identity mismatch is reported without
+overwriting either credential set.
+
+OAuth refresh responses are never logged. Rotated refresh tokens are written to
+secure storage before a profile is activated.
+
 ## Sensitive Files
 
 The CLI writes Codex auth data to:

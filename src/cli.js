@@ -19,6 +19,9 @@ import {
 } from "./core/codex-login.js";
 import { collectDoctorReport, formatDoctorReport } from "./core/doctor.js";
 import { detectCodexProcesses, assertSwitchCanProceed } from "./core/process-detect.js";
+import { syncActiveProfileAuth, startAuthSyncMonitor } from "./core/auth-sync.js";
+import { ensureProfileAuthFresh } from "./core/token-refresh.js";
+import { getCodexCredentialStore } from "./core/codex-config.js";
 import {
   BOUNDARY_ACK_ZH,
   BOUNDARY_NOTICE_EN,
@@ -50,7 +53,7 @@ export async function runCli(argv, io = {}) {
       return 0;
     }
     if (command === "--version" || command === "-v") {
-      stdout.write("0.1.0\n");
+      stdout.write("0.2.0\n");
       return 0;
     }
 
@@ -104,6 +107,16 @@ export async function runCli(argv, io = {}) {
       case "refresh-auth":
       case "reauth":
         await refreshAuthCommand(context);
+        return 0;
+      case "refresh-token":
+        await refreshTokenCommand(context);
+        return 0;
+      case "sync-active":
+        await syncActiveCommand(context);
+        return 0;
+      case "watch":
+      case "monitor":
+        await watchCommand(context);
         return 0;
       case "use":
         await useCommand(context);
@@ -343,6 +356,75 @@ async function refreshAuthCommand(context) {
   }
 }
 
+async function refreshTokenCommand(context) {
+  const { args, options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+
+  const profileId = options.name || args[0];
+  requireArgument(profileId, "Profile name is required. Example: codex-profile refresh-token personal");
+  const active = await metadataStore.currentProfile();
+  if (active?.profile_id === profileId) {
+    await assertSwitchCanProceed({ env });
+  }
+
+  const result = await ensureProfileAuthFresh(profileId, {
+    env,
+    metadataStore,
+    secureStore,
+    force: true,
+  });
+  if (result.status === "not-refreshable") {
+    stdout.write(`Profile "${profileId}" does not contain a refreshable ChatGPT OAuth login.\n`);
+    return;
+  }
+  stdout.write(`Refreshed the saved OAuth login for "${profileId}".\n`);
+  stdout.write("The active Codex auth.json was not changed.\n");
+}
+
+async function syncActiveCommand(context) {
+  const { options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+  const result = await syncActiveProfileAuth({ env, metadataStore, secureStore });
+  stdout.write(formatAuthSyncStatus(result));
+  if (result.status === "identity-mismatch") {
+    throw new AppError("AUTH_SYNC_IDENTITY_MISMATCH", result.message, { exitCode: 2 });
+  }
+}
+
+async function watchCommand(context) {
+  const { options, metadataStore, secureStore, stdout, env } = context;
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+  const monitor = startAuthSyncMonitor({
+    env,
+    metadataStore,
+    secureStore,
+    intervalMs: options.interval,
+  });
+  const initial = await monitor.ready;
+  stdout.write(formatAuthSyncStatus(initial));
+  stdout.write(`Monitoring active auth.json every ${Math.round(monitor.intervalMs / 1000)} seconds. Press Ctrl+C to stop.\n`);
+
+  await new Promise((resolve) => {
+    const stop = async () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      await monitor.stop();
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+}
+
 async function useCommand(context) {
   const { args, stdout, env, options } = context;
   await ensurePolicyAcknowledged({
@@ -419,14 +501,18 @@ async function statusCommand({ metadataStore, stdout, env }) {
   const active = await metadataStore.currentProfile();
   const authStatus = await getAuthFileStatus(env);
   const processes = await detectCodexProcesses(env);
+  const credentialStore = await getCodexCredentialStore(env);
 
   stdout.write(
     [
       "Codex Profile Switcher Status",
       "",
       `Active profile: ${active?.profile_id || "none"}`,
+      `Last secure sync: ${active?.auth_synced_at || "never"}`,
+      `Saved token expiry: ${active?.auth_expires_at || "unknown"}`,
       `Codex directory: ${codexHome(env)}`,
       `auth.json: ${authStatus.exists ? `found (${authStatus.permissions})` : "missing"}`,
+      `Codex credential store: ${credentialStore.display}${credentialStore.fileCompatible ? "" : " (incompatible with auth.json switching)"}`,
       `Process check: ${
         processes.length === 0
           ? "no Codex-related processes detected"
@@ -519,7 +605,22 @@ function switchOptions(context) {
     allowRunning: Boolean(options["allow-running"]),
     forceClose: Boolean(options["force-close"]),
     confirmForceClose: Boolean(options["confirm-force-close"]),
+    refreshSavedAuth: !options["no-refresh"],
   };
+}
+
+function formatAuthSyncStatus(result) {
+  const label = {
+    synced: "saved updated credentials",
+    current: "already current",
+    inactive: "no active profile",
+    missing: "auth.json missing",
+    unavailable: "saved login unavailable",
+    "identity-mismatch": "identity mismatch; no credentials changed",
+    incompatible: "Codex keyring/auto mode is incompatible with auth.json sync",
+    error: "sync failed",
+  }[result.status] || result.status;
+  return `Auth sync: ${label}${result.profileId ? ` (${result.profileId})` : ""}.\n`;
 }
 
 function profileMetadataFromOptions(options, profileId, { includeDisplayName = false } = {}) {
@@ -652,7 +753,10 @@ Commands:
   codex-profile capture-current personal [--use]
   codex-profile login personal [--device-auth] [--use]
   codex-profile refresh-auth personal [--device-auth] [--use]
-  codex-profile use personal
+  codex-profile refresh-token personal
+  codex-profile sync-active
+  codex-profile watch [--interval 15000]
+  codex-profile use personal [--no-refresh]
   codex-profile remove personal --yes
   codex-profile rename old-id new-id
   codex-profile status

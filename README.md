@@ -22,6 +22,10 @@ Implemented:
 - `import-auth` for importing an existing Codex `auth.json`
 - `capture-current` for saving the currently active Codex `auth.json`
 - Native `codex login` capture and profile-specific credential refresh in an isolated temporary Codex home
+- Active-session auth synchronization: refreshed tokens written by a running Codex session are copied back to the active profile's secure-store entry
+- Identity checks before synchronization so a direct login to another account cannot overwrite the wrong profile
+- Automatic OAuth refresh for an expired saved profile immediately before a manual switch
+- Foreground `watch` monitor and automatic monitoring while the local GUI server is running
 - Local web GUI for listing, importing, editing, switching, backing up, and exporting metadata
 - Current active profile usage display in the local GUI
 - System secure storage for auth secrets:
@@ -133,6 +137,31 @@ This does not change the active local Codex session unless `--use` is supplied.
 It relies on the installed Codex CLI to refresh or re-authenticate; this project
 does not call private OAuth token endpoints itself.
 
+For normal manual switching, expired ChatGPT OAuth access tokens are refreshed
+through OpenAI's OAuth token service immediately before `use` writes the saved
+profile to `~/.codex/auth.json`. Rotated refresh tokens are saved back to the
+system secure store. Use `--no-refresh` only for offline troubleshooting.
+
+While Codex is running, keep either the GUI server or the foreground monitor
+running. It watches the active `auth.json` every 15 seconds and saves token
+rotations back to the matching profile without modifying the running session:
+
+```bash
+# The GUI starts the monitor automatically.
+npm run gui
+
+# Or run only the monitor.
+codex-profile watch
+
+# One-shot synchronization and direct saved-token refresh.
+codex-profile sync-active
+codex-profile refresh-token personal
+```
+
+The monitor compares account identity before writing. If `auth.json` belongs to
+a different account, it reports an identity mismatch and leaves the saved
+profile unchanged. It never switches profiles automatically.
+
 `capture-current` remains useful for migrating an already logged-in local
 session into the secure store:
 
@@ -154,6 +183,9 @@ codex-profile import-auth ./auth.json --name personal --use
 codex-profile capture-current personal
 codex-profile login personal --device-auth
 codex-profile refresh-auth personal --device-auth
+codex-profile refresh-token personal
+codex-profile sync-active
+codex-profile watch [--interval 15000]
 codex-profile use personal
 codex-profile remove personal --yes
 codex-profile rename personal main
@@ -181,7 +213,10 @@ codex-profile gui --port 8787
 
 Then open the printed local URL. The GUI uses the same core logic as the CLI and keeps switching manual: it can import `auth.json`, show profile/status/doctor information, show the current active profile's separate usage, edit metadata, create backups, export metadata, and switch only when you click the switch button.
 
-The usage panel refreshes only the active profile while the GUI is open. It does not poll inactive profiles, total usage across profiles, or choose a profile based on remaining usage.
+The GUI automatically synchronizes refreshed credentials for the active profile
+while its server process is running. The usage panel still refreshes only the
+active profile; it does not poll inactive profiles, total usage across profiles,
+or choose a profile based on remaining usage.
 
 The following commands are intentionally not provided:
 
@@ -203,6 +238,16 @@ Metadata is written to:
 
 Secrets are written to the system secure store. The metadata file stores only an `auth_secret_ref`, never the full `auth.json`, tokens, cookies, API keys, or authorization headers.
 
+On Windows, large `auth.json` payloads are split across multiple Credential
+Manager entries to stay below the per-entry credential blob limit.
+
+This project switches Codex through `auth.json`. If Codex is explicitly
+configured with `cli_auth_credentials_store = "keyring"` or `"auto"`, switching
+is blocked instead of reporting a false success because those modes may use the
+OS credential store and ignore the file. Set it to `"file"` in `config.toml`
+before using this project. The `doctor` and GUI status views report this
+compatibility.
+
 The target Codex auth file is:
 
 ```text
@@ -221,6 +266,12 @@ CODEX_PROFILE_CODEX_HOME=/tmp/codex-home
 Before `use` or `restore`, the CLI checks for common Codex-related processes such as `codex`, `codex-cli`, VS Code Codex extension processes, `app-server`, and Antigravity Codex processes.
 
 Default behavior blocks switching while such processes are running. `--allow-running` exists for explicit manual override, but the safer path is to close active Codex sessions first.
+
+The auth monitor is safe to run while Codex is active because it only copies a
+verified matching `auth.json` into secure storage. It does not replace the live
+file. Close the active Codex session before switching profiles; replacing the
+file underneath a running session can leave stale credentials in memory or let
+that process overwrite the newly selected profile.
 
 Force close is not implemented in the MVP. Passing `--force-close` without `--confirm-force-close` fails with a confirmation error, and passing both flags reports that force close is intentionally unavailable.
 
