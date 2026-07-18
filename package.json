@@ -1,6 +1,6 @@
 {
   "name": "codex-profile-switcher",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Manual local profile switcher for Codex CLI accounts and workspaces.",
   "type": "module",
   "bin": {
@@ -10,6 +10,9 @@
     "test": "node --test",
     "gui": "node ./bin/codex-profile.js gui",
     "watch": "node ./bin/codex-profile.js watch",
+    "daemon:start": "node ./bin/codex-profile.js daemon start",
+    "daemon:status": "node ./bin/codex-profile.js daemon status",
+    "daemon:stop": "node ./bin/codex-profile.js daemon stop",
     "doctor": "node ./bin/codex-profile.js doctor"
   },
   "engines": {

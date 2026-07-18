@@ -13,6 +13,7 @@ import { createSecretRef } from "./metadata-store.js";
 import { assertSwitchCanProceed } from "./process-detect.js";
 import { ensureProfileAuthFresh } from "./token-refresh.js";
 import { assertFileCredentialStoreCompatible } from "./codex-config.js";
+import { syncActiveProfileAuth } from "./auth-sync.js";
 
 export async function importAuthJson(filePath, profileId, options) {
   const raw = await fs.readFile(filePath, "utf8");
@@ -90,10 +91,23 @@ export async function switchProfile(profileId, options) {
     forceClose = false,
     confirmForceClose = false,
     refreshSavedAuth = true,
+    syncActiveBeforeSwitch = true,
     fetchImpl = globalThis.fetch,
   } = options;
 
   await assertFileCredentialStoreCompatible(env);
+  const preSwitchSync = syncActiveBeforeSwitch
+    ? await syncActiveProfileAuth({ env, metadataStore, secureStore })
+    : null;
+  if (preSwitchSync?.status === "synced") {
+    stdout?.write?.(
+      `Saved the latest credentials for "${preSwitchSync.profileId}" before switching.\n`,
+    );
+  } else if (preSwitchSync?.status === "identity-mismatch") {
+    stdout?.write?.(
+      "Warning: the current auth.json did not match the active profile, so it was backed up but not saved over that profile.\n",
+    );
+  }
   await assertSwitchCanProceed({
     env,
     allowRunning,
@@ -142,6 +156,7 @@ export async function switchProfile(profileId, options) {
       profile,
       authPath,
       backup,
+      preSwitchSync,
     };
   } catch (error) {
     const rolledBack = await rollbackAuthJson(authPath, backup);

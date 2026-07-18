@@ -23,6 +23,13 @@ import { syncActiveProfileAuth, startAuthSyncMonitor } from "./core/auth-sync.js
 import { ensureProfileAuthFresh } from "./core/token-refresh.js";
 import { getCodexCredentialStore } from "./core/codex-config.js";
 import {
+  getAuthDaemonStatus,
+  restartAuthDaemon,
+  runAuthDaemon,
+  startAuthDaemon,
+  stopAuthDaemon,
+} from "./core/auth-daemon.js";
+import {
   BOUNDARY_ACK_ZH,
   BOUNDARY_NOTICE_EN,
   BOUNDARY_NOTICE_ZH,
@@ -53,7 +60,7 @@ export async function runCli(argv, io = {}) {
       return 0;
     }
     if (command === "--version" || command === "-v") {
-      stdout.write("0.2.0\n");
+      stdout.write("0.3.0\n");
       return 0;
     }
 
@@ -117,6 +124,12 @@ export async function runCli(argv, io = {}) {
       case "watch":
       case "monitor":
         await watchCommand(context);
+        return 0;
+      case "daemon":
+        await daemonCommand(context);
+        return 0;
+      case "daemon-run":
+        await daemonRunCommand(context);
         return 0;
       case "use":
         await useCommand(context);
@@ -256,6 +269,7 @@ async function importAuthCommand(context) {
 
   if (options.use) {
     const result = await switchProfile(profileId, switchOptions(context));
+    await ensurePersistentAuthSync(context);
     stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
   } else {
     stdout.write(`Run "codex-profile use ${imported.profile_id}" to switch manually.\n`);
@@ -294,6 +308,7 @@ async function captureCurrentCommand(context) {
 
   if (options.use) {
     await metadataStore.setActiveProfile(profileId);
+    await ensurePersistentAuthSync(context);
     stdout.write(`Marked "${captured.profile_id}" as the active profile metadata.\n`);
   } else {
     stdout.write(`Run "codex-profile use ${captured.profile_id}" to switch manually later.\n`);
@@ -322,6 +337,7 @@ async function loginCommand(context) {
 
   if (options.use) {
     const result = await switchProfile(profileId, switchOptions(context));
+    await ensurePersistentAuthSync(context);
     stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
   } else {
     stdout.write(`Run "codex-profile use ${profile.profile_id}" to switch manually.\n`);
@@ -350,6 +366,7 @@ async function refreshAuthCommand(context) {
 
   if (options.use) {
     const result = await switchProfile(profileId, switchOptions(context));
+    await ensurePersistentAuthSync(context);
     stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
   } else {
     stdout.write("The current Codex auth.json was not changed.\n");
@@ -366,7 +383,12 @@ async function refreshTokenCommand(context) {
   const profileId = options.name || args[0];
   requireArgument(profileId, "Profile name is required. Example: codex-profile refresh-token personal");
   const active = await metadataStore.currentProfile();
-  if (active?.profile_id === profileId) {
+  const isActive = active?.profile_id === profileId;
+  if (isActive) {
+    const liveSync = await syncActiveProfileAuth({ env, metadataStore, secureStore });
+    if (liveSync.status === "identity-mismatch") {
+      throw new AppError("AUTH_SYNC_IDENTITY_MISMATCH", liveSync.message, { exitCode: 2 });
+    }
     await assertSwitchCanProceed({ env });
   }
 
@@ -381,7 +403,17 @@ async function refreshTokenCommand(context) {
     return;
   }
   stdout.write(`Refreshed the saved OAuth login for "${profileId}".\n`);
-  stdout.write("The active Codex auth.json was not changed.\n");
+  if (isActive) {
+    const switched = await switchProfile(profileId, {
+      ...switchOptions(context),
+      refreshSavedAuth: false,
+      syncActiveBeforeSwitch: false,
+    });
+    await ensurePersistentAuthSync(context);
+    stdout.write(`Updated the active Codex auth.json at ${switched.authPath}.\n`);
+  } else {
+    stdout.write("The active Codex auth.json was not changed.\n");
+  }
 }
 
 async function syncActiveCommand(context) {
@@ -425,6 +457,66 @@ async function watchCommand(context) {
   });
 }
 
+async function daemonCommand(context) {
+  const { args, options, stdout, env } = context;
+  const action = args[0] || "status";
+
+  if (action === "status") {
+    stdout.write(formatDaemonStatus(await getAuthDaemonStatus(env)));
+    return;
+  }
+
+  await ensurePolicyAcknowledged({
+    env,
+    acceptBoundary: Boolean(options["accept-boundary"]),
+  });
+
+  if (action === "start") {
+    const status = await startAuthDaemon({ env, intervalMs: options.interval });
+    stdout.write(
+      status.alreadyRunning
+        ? `Auth sync daemon is already running as process ${status.pid}.\n`
+        : `Started auth sync daemon as process ${status.pid}.\n`,
+    );
+    stdout.write(`Log: ${status.logPath}\n`);
+    return;
+  }
+
+  if (action === "stop") {
+    const status = await stopAuthDaemon({ env });
+    stdout.write(
+      status.alreadyStopped
+        ? "Auth sync daemon is already stopped.\n"
+        : "Stopped auth sync daemon.\n",
+    );
+    return;
+  }
+
+  if (action === "restart") {
+    const status = await restartAuthDaemon({ env, intervalMs: options.interval });
+    stdout.write(`Restarted auth sync daemon as process ${status.pid}.\n`);
+    stdout.write(`Log: ${status.logPath}\n`);
+    return;
+  }
+
+  throw new AppError(
+    "UNKNOWN_DAEMON_COMMAND",
+    `Unknown daemon action "${action}". Use start, stop, restart, or status.`,
+    { exitCode: 2 },
+  );
+}
+
+async function daemonRunCommand(context) {
+  const { options, env, metadataStore, secureStore } = context;
+  await runAuthDaemon({
+    env,
+    metadataStore,
+    secureStore,
+    intervalMs: options.interval,
+    instanceId: typeof options.instance === "string" ? options.instance : undefined,
+  });
+}
+
 async function useCommand(context) {
   const { args, stdout, env, options } = context;
   await ensurePolicyAcknowledged({
@@ -436,6 +528,7 @@ async function useCommand(context) {
   requireArgument(profileId, "Profile id is required. Example: codex-profile use personal");
 
   const result = await switchProfile(profileId, switchOptions(context));
+  await ensurePersistentAuthSync(context);
   stdout.write(switchSuccessText(result.profile.profile_id, result.authPath));
 }
 
@@ -502,6 +595,7 @@ async function statusCommand({ metadataStore, stdout, env }) {
   const authStatus = await getAuthFileStatus(env);
   const processes = await detectCodexProcesses(env);
   const credentialStore = await getCodexCredentialStore(env);
+  const daemon = await getAuthDaemonStatus(env);
 
   stdout.write(
     [
@@ -513,6 +607,7 @@ async function statusCommand({ metadataStore, stdout, env }) {
       `Codex directory: ${codexHome(env)}`,
       `auth.json: ${authStatus.exists ? `found (${authStatus.permissions})` : "missing"}`,
       `Codex credential store: ${credentialStore.display}${credentialStore.fileCompatible ? "" : " (incompatible with auth.json switching)"}`,
+      `Auth sync daemon: ${daemon.running ? daemon.healthy ? `running (${daemon.pid})` : `unhealthy (${daemon.pid})` : "stopped"}`,
       `Process check: ${
         processes.length === 0
           ? "no Codex-related processes detected"
@@ -533,6 +628,21 @@ async function doctorCommand({ metadataStore, secureStore, stdout, env }) {
 
 async function guiCommand({ env, stdout, options }) {
   const { runGuiServer } = await import("./gui/server.js");
+  try {
+    const daemon = await startAuthDaemon({
+      env,
+      intervalMs: options["sync-interval"] || options.interval,
+    });
+    stdout.write(
+      daemon.alreadyRunning
+        ? `Background auth sync is already running (${daemon.pid}).\n`
+        : `Background auth sync started (${daemon.pid}) and will continue after the GUI closes.\n`,
+    );
+  } catch (error) {
+    stdout.write(
+      `Warning: persistent background auth sync could not start (${redactText(error.message)}). The GUI will keep syncing while it remains open.\n`,
+    );
+  }
   await runGuiServer({
     env,
     stdout,
@@ -609,6 +719,29 @@ function switchOptions(context) {
   };
 }
 
+async function ensurePersistentAuthSync(context) {
+  const { env, stdout, options } = context;
+  if (env.NODE_ENV === "test" || env.CODEX_PROFILE_DISABLE_AUTO_DAEMON === "1") {
+    return null;
+  }
+
+  try {
+    const status = await startAuthDaemon({
+      env,
+      intervalMs: options["sync-interval"] || options.interval,
+    });
+    if (!status.alreadyRunning) {
+      stdout.write(`Started background auth sync (${status.pid}).\n`);
+    }
+    return status;
+  } catch (error) {
+    stdout.write(
+      `Warning: background auth sync could not start (${redactText(error.message)}). Run "codex-profile daemon start" to retry.\n`,
+    );
+    return null;
+  }
+}
+
 function formatAuthSyncStatus(result) {
   const label = {
     synced: "saved updated credentials",
@@ -621,6 +754,22 @@ function formatAuthSyncStatus(result) {
     error: "sync failed",
   }[result.status] || result.status;
   return `Auth sync: ${label}${result.profileId ? ` (${result.profileId})` : ""}.\n`;
+}
+
+function formatDaemonStatus(status) {
+  return [
+    "Codex Profile Auth Sync Daemon",
+    "",
+    `State: ${status.running ? status.healthy ? "running" : "unhealthy" : "stopped"}`,
+    `PID: ${status.pid || "-"}`,
+    `Started: ${status.startedAt || "-"}`,
+    `Last heartbeat: ${status.updatedAt || "-"}`,
+    `Last sync: ${status.sync?.status || "-"}`,
+    `Active profile: ${status.sync?.profileId || "-"}`,
+    `State file: ${status.statePath}`,
+    `Log: ${status.logPath}`,
+    "",
+  ].join("\n");
 }
 
 function profileMetadataFromOptions(options, profileId, { includeDisplayName = false } = {}) {
@@ -756,6 +905,10 @@ Commands:
   codex-profile refresh-token personal
   codex-profile sync-active
   codex-profile watch [--interval 15000]
+  codex-profile daemon start [--interval 15000]
+  codex-profile daemon status
+  codex-profile daemon restart [--interval 15000]
+  codex-profile daemon stop
   codex-profile use personal [--no-refresh]
   codex-profile remove personal --yes
   codex-profile rename old-id new-id

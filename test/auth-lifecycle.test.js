@@ -128,6 +128,39 @@ test("switching refreshes an expired target before writing auth.json", async () 
   assert.match(output.join(""), /Refreshed the saved OAuth login/);
 });
 
+test("switching captures the active profile's latest rotated tokens first", async () => {
+  const workspace = await createWorkspace();
+  const metadataStore = new MetadataStore(workspace.env);
+  const secureStore = new SecureStore(workspace.env);
+  const personal = chatGptAuth("acc_personal", "old-personal-refresh", 3600, "saved");
+  const rotated = chatGptAuth("acc_personal", "new-personal-refresh", 7200, "rotated");
+  const work = chatGptAuth("acc_work", "work-refresh", 3600, "work");
+
+  await importAuthJsonString(JSON.stringify(personal), "personal", {
+    metadataStore,
+    secureStore,
+  });
+  await importAuthJsonString(JSON.stringify(work), "work", {
+    metadataStore,
+    secureStore,
+  });
+  await metadataStore.setActiveProfile("personal");
+  await fs.writeFile(workspace.authPath, JSON.stringify(rotated), { mode: 0o600 });
+
+  const result = await switchProfile("work", {
+    env: workspace.env,
+    metadataStore,
+    secureStore,
+  });
+
+  assert.equal(result.preSwitchSync.status, "synced");
+  assert.equal(
+    JSON.parse(await secureStore.get("personal")).tokens.refresh_token,
+    "new-personal-refresh",
+  );
+  assert.equal(JSON.parse(await fs.readFile(workspace.authPath, "utf8")).tokens.marker, "work");
+});
+
 test("auth sync monitor can capture a later token rotation and stop cleanly", async () => {
   const workspace = await createWorkspace();
   const metadataStore = new MetadataStore(workspace.env);

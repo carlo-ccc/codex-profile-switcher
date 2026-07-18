@@ -181,6 +181,7 @@ test("help documents native login and profile-specific refresh", async () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /codex-profile login personal \[--device-auth\] \[--use\]/);
   assert.match(result.stdout, /codex-profile refresh-auth personal \[--device-auth\] \[--use\]/);
+  assert.match(result.stdout, /codex-profile daemon start \[--interval 15000\]/);
 });
 
 test("switch failure rolls back the previous auth.json", async () => {

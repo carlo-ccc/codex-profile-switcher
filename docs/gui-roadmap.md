@@ -1,6 +1,10 @@
-# GUI Roadmap
+# Optional Desktop Packaging Roadmap
 
-The MVP is CLI-first. The recommended desktop path is Tauri + React + TypeScript, reusing the same core command logic through a thin bridge.
+The project already provides a zero-dependency local web GUI and a detached
+auth-sync daemon. Persistent credential synchronization therefore does not
+require a desktop rewrite. If native tray/Dock packaging is desired later, the
+recommended path remains Tauri + React + TypeScript, reusing the same core
+command logic through a thin bridge.
 
 ## First GUI Milestone
 

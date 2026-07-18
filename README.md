@@ -25,7 +25,9 @@ Implemented:
 - Active-session auth synchronization: refreshed tokens written by a running Codex session are copied back to the active profile's secure-store entry
 - Identity checks before synchronization so a direct login to another account cannot overwrite the wrong profile
 - Automatic OAuth refresh for an expired saved profile immediately before a manual switch
-- Foreground `watch` monitor and automatic monitoring while the local GUI server is running
+- Detached auth-sync daemon with health/heartbeat status and safe start, restart, and stop controls
+- Automatic daemon startup after profile activation and when the local GUI starts
+- Foreground `watch` monitor for troubleshooting or environments where detached processes are unavailable
 - Local web GUI for listing, importing, editing, switching, backing up, and exporting metadata
 - Current active profile usage display in the local GUI
 - System secure storage for auth secrets:
@@ -142,15 +144,21 @@ through OpenAI's OAuth token service immediately before `use` writes the saved
 profile to `~/.codex/auth.json`. Rotated refresh tokens are saved back to the
 system secure store. Use `--no-refresh` only for offline troubleshooting.
 
-While Codex is running, keep either the GUI server or the foreground monitor
-running. It watches the active `auth.json` every 15 seconds and saves token
-rotations back to the matching profile without modifying the running session:
+After a profile is activated, the CLI automatically starts a detached auth-sync
+daemon. It watches the active `auth.json` every 15 seconds and saves token
+rotations back to the matching profile without modifying or stopping the running
+Codex session. The daemon keeps running after the command terminal or local GUI
+is closed:
 
 ```bash
-# The GUI starts the monitor automatically.
-npm run gui
+# Usually automatic after `use`, `login --use`, `capture-current --use`,
+# `import-auth --use`, or GUI startup. These commands manage it explicitly:
+codex-profile daemon status
+codex-profile daemon start
+codex-profile daemon restart
+codex-profile daemon stop
 
-# Or run only the monitor.
+# Foreground fallback/debugging mode:
 codex-profile watch
 
 # One-shot synchronization and direct saved-token refresh.
@@ -158,9 +166,18 @@ codex-profile sync-active
 codex-profile refresh-token personal
 ```
 
-The monitor compares account identity before writing. If `auth.json` belongs to
+Both daemon and foreground monitor compare account identity before writing. If `auth.json` belongs to
 a different account, it reports an identity mismatch and leaves the saved
 profile unchanged. It never switches profiles automatically.
+
+Immediately before every manual switch, the switcher also performs one final
+synchronization of the previously active profile. This closes the gap where
+Codex might rotate a refresh token just before `auth.json` is replaced.
+
+The daemon synchronizes only the manually selected active profile. Inactive
+profiles are not polled; an expired inactive profile is refreshed only when you
+manually switch to it. Set `CODEX_PROFILE_DISABLE_AUTO_DAEMON=1` if you prefer
+to use only the foreground monitor.
 
 `capture-current` remains useful for migrating an already logged-in local
 session into the secure store:
@@ -186,6 +203,10 @@ codex-profile refresh-auth personal --device-auth
 codex-profile refresh-token personal
 codex-profile sync-active
 codex-profile watch [--interval 15000]
+codex-profile daemon start [--interval 15000]
+codex-profile daemon status
+codex-profile daemon restart [--interval 15000]
+codex-profile daemon stop
 codex-profile use personal
 codex-profile remove personal --yes
 codex-profile rename personal main
@@ -213,8 +234,9 @@ codex-profile gui --port 8787
 
 Then open the printed local URL. The GUI uses the same core logic as the CLI and keeps switching manual: it can import `auth.json`, show profile/status/doctor information, show the current active profile's separate usage, edit metadata, create backups, export metadata, and switch only when you click the switch button.
 
-The GUI automatically synchronizes refreshed credentials for the active profile
-while its server process is running. The usage panel still refreshes only the
+The GUI automatically ensures the detached auth-sync daemon is running. Closing
+the GUI does not stop that daemon; use `codex-profile daemon stop` when you want
+to stop background synchronization. The usage panel still refreshes only the
 active profile; it does not poll inactive profiles, total usage across profiles,
 or choose a profile based on remaining usage.
 
@@ -235,6 +257,15 @@ Metadata is written to:
 ```text
 ~/.codex-profile-switcher/profiles.json
 ```
+
+The daemon writes only redacted operational state and logs to:
+
+```text
+~/.codex-profile-switcher/auth-sync-daemon.json
+~/.codex-profile-switcher/auth-sync-daemon.log
+```
+
+Neither daemon file contains `auth.json` contents or tokens.
 
 Secrets are written to the system secure store. The metadata file stores only an `auth_secret_ref`, never the full `auth.json`, tokens, cookies, API keys, or authorization headers.
 
@@ -267,7 +298,7 @@ Before `use` or `restore`, the CLI checks for common Codex-related processes suc
 
 Default behavior blocks switching while such processes are running. `--allow-running` exists for explicit manual override, but the safer path is to close active Codex sessions first.
 
-The auth monitor is safe to run while Codex is active because it only copies a
+The auth daemon/monitor is safe to run while Codex is active because it only copies a
 verified matching `auth.json` into secure storage. It does not replace the live
 file. Close the active Codex session before switching profiles; replacing the
 file underneath a running session can leave stale credentials in memory or let
@@ -297,6 +328,9 @@ CODEX_PROFILE_TEST_STORE=1
 
 Do not use that setting for real credentials.
 
-## Desktop GUI Plan
+## Desktop Packaging
 
-The repository now includes a zero-dependency local web GUI. A future Tauri + React + TypeScript desktop GUI plan is documented in [docs/gui-roadmap.md](docs/gui-roadmap.md).
+The persistent-login requirement is handled by the lightweight background
+daemon, so a desktop rewrite is not required. The repository still includes a
+zero-dependency local web GUI; an optional future Tauri packaging plan is
+documented in [docs/gui-roadmap.md](docs/gui-roadmap.md).

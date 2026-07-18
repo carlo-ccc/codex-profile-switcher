@@ -5,6 +5,7 @@ import { pathExists } from "./fs-utils.js";
 import { getAuthFileStatus } from "./auth.js";
 import { detectCodexProcesses } from "./process-detect.js";
 import { getCodexCredentialStore } from "./codex-config.js";
+import { getAuthDaemonStatus } from "./auth-daemon.js";
 
 export async function collectDoctorReport(options) {
   const { env = process.env, metadataStore, secureStore } = options;
@@ -14,6 +15,7 @@ export async function collectDoctorReport(options) {
   const processes = await detectCodexProcesses(env);
   const secureAvailable = await secureStore.available();
   const credentialStore = await getCodexCredentialStore(env);
+  const daemon = await getAuthDaemonStatus(env);
 
   return {
     system: systemName(),
@@ -44,6 +46,7 @@ export async function collectDoctorReport(options) {
         profile.auth_source,
     ),
     processes,
+    daemon,
     wsl: detectWsl(),
   };
 }
@@ -62,6 +65,7 @@ export function formatDoctorReport(report) {
     `config.toml: ${report.configToml.exists ? "found" : "missing"}`,
     `Codex credential store: ${report.credentialStore.display} (${report.credentialStore.fileCompatible ? "auth.json compatible" : "incompatible with file switching"})`,
     `Secure storage: ${report.secureStorage.available ? "available" : "unavailable"} (${report.secureStorage.backend})`,
+    `Auth sync daemon: ${report.daemon.running ? report.daemon.healthy ? `running (${report.daemon.pid})` : `unhealthy (${report.daemon.pid})` : "stopped"}`,
     `Active profile: ${report.activeProfileId || "none"}`,
     `Profiles: ${report.profileCount}`,
     `Profile metadata: ${report.metadataComplete ? "OK" : "incomplete"}`,

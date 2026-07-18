@@ -221,6 +221,14 @@ function renderStatus() {
     statusItem("安全存储", secureStorage.available ? secureStorage.backend : "unavailable"),
     statusItem("Codex CLI", doctor.codexCliInstalled ? "found" : "not found"),
     statusItem("Profiles", String(guiState?.profileCount ?? 0)),
+    statusItem(
+      "后台同步",
+      doctor.daemon?.running
+        ? doctor.daemon.healthy
+          ? `运行中 (${doctor.daemon.pid})`
+          : `异常 (${doctor.daemon.pid})`
+        : "未运行",
+    ),
     statusItem("登录同步", formatAuthSyncStatus(authSync)),
     statusItem("同步检查", formatDate(authSync.checkedAt)),
     statusItem("Codex 目录", guiState?.paths?.codexHome || "-"),

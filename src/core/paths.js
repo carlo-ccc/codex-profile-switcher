@@ -50,6 +50,18 @@ export function backupDir(env = process.env) {
   return path.join(appHome(env), "backups");
 }
 
+export function daemonStatePath(env = process.env) {
+  return path.join(appHome(env), "auth-sync-daemon.json");
+}
+
+export function daemonLogPath(env = process.env) {
+  return path.join(appHome(env), "auth-sync-daemon.log");
+}
+
+export function daemonLockPath(env = process.env) {
+  return path.join(appHome(env), ".auth-sync-daemon-start.lock");
+}
+
 export function authJsonPath(env = process.env) {
   return path.join(codexHome(env), "auth.json");
 }

@@ -27,6 +27,12 @@ overwriting either credential set.
 OAuth refresh responses are never logged. Rotated refresh tokens are written to
 secure storage before a profile is activated.
 
+The detached daemon state and log files contain only PID/heartbeat information,
+redacted synchronization status, profile IDs, and timestamps. They never contain
+`auth.json` contents, access tokens, or refresh tokens. The daemon inherits only
+the small environment-variable allowlist needed for paths and supported secure
+storage backends.
+
 ## Sensitive Files
 
 The CLI writes Codex auth data to:
@@ -50,6 +56,11 @@ Backups contain sensitive `auth.json` data. Treat them as secrets.
 Switching while Codex is running can leave active sessions in an inconsistent state. The CLI defaults to blocking `use` and `restore` if Codex-related processes are detected.
 
 Force close is not implemented in the MVP. Users should close Codex sessions manually before switching.
+
+The auth-sync daemon does not switch profiles or terminate Codex processes. It
+only copies a verified matching active `auth.json` into secure storage. Daemon
+stop refuses to signal a PID whose heartbeat is stale, reducing the risk of
+terminating an unrelated process after PID reuse.
 
 ## Reporting Issues
 
