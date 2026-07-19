@@ -145,7 +145,7 @@ profile to `~/.codex/auth.json`. Rotated refresh tokens are saved back to the
 system secure store. Use `--no-refresh` only for offline troubleshooting.
 
 After a profile is activated, the CLI automatically starts a detached auth-sync
-daemon. It watches the active `auth.json` every 15 seconds and saves token
+daemon. It watches the active `auth.json` every 2 minutes and saves token
 rotations back to the matching profile without modifying or stopping the running
 Codex session. The daemon keeps running after the command terminal or local GUI
 is closed:
@@ -202,10 +202,10 @@ codex-profile login personal --device-auth
 codex-profile refresh-auth personal --device-auth
 codex-profile refresh-token personal
 codex-profile sync-active
-codex-profile watch [--interval 15000]
-codex-profile daemon start [--interval 15000]
+codex-profile watch [--interval 120000]
+codex-profile daemon start [--interval 120000]
 codex-profile daemon status
-codex-profile daemon restart [--interval 15000]
+codex-profile daemon restart [--interval 120000]
 codex-profile daemon stop
 codex-profile use personal
 codex-profile remove personal --yes

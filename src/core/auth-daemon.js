@@ -7,10 +7,9 @@ import { AppError } from "./errors.js";
 import { ensureDir, readJson, writeJsonAtomic } from "./fs-utils.js";
 import { MetadataStore } from "./metadata-store.js";
 import { SecureStore } from "./secure-store.js";
-import { startAuthSyncMonitor } from "./auth-sync.js";
+import { DEFAULT_AUTH_SYNC_INTERVAL_MS, startAuthSyncMonitor } from "./auth-sync.js";
 import { appHome, daemonLockPath, daemonLogPath, daemonStatePath } from "./paths.js";
 
-const DEFAULT_INTERVAL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const START_TIMEOUT_MS = 8_000;
 const STOP_TIMEOUT_MS = 8_000;
@@ -355,7 +354,7 @@ function timestampAgeMs(value) {
 function normalizeIntervalMs(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 1_000) {
-    return DEFAULT_INTERVAL_MS;
+    return DEFAULT_AUTH_SYNC_INTERVAL_MS;
   }
   return Math.min(Math.round(number), 60 * 60 * 1000);
 }

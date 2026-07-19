@@ -10,7 +10,7 @@ import {
 import { redactText } from "./redaction.js";
 import { getCodexCredentialStore } from "./codex-config.js";
 
-const DEFAULT_SYNC_INTERVAL_MS = 15_000;
+export const DEFAULT_AUTH_SYNC_INTERVAL_MS = 120_000;
 
 export async function syncActiveProfileAuth(options) {
   const { env = process.env, metadataStore, secureStore } = options;
@@ -152,7 +152,7 @@ function syncStatus(status, checkedAt, profileId, message) {
 function syncIntervalMs(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 1_000) {
-    return DEFAULT_SYNC_INTERVAL_MS;
+    return DEFAULT_AUTH_SYNC_INTERVAL_MS;
   }
   return Math.min(number, 60 * 60 * 1000);
 }

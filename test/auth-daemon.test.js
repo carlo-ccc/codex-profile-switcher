@@ -11,12 +11,17 @@ import {
   stopAuthDaemon,
 } from "../src/core/auth-daemon.js";
 import { importAuthJsonString } from "../src/core/auth.js";
+import { DEFAULT_AUTH_SYNC_INTERVAL_MS } from "../src/core/auth-sync.js";
 import { MetadataStore } from "../src/core/metadata-store.js";
 import { SecureStore } from "../src/core/secure-store.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const binPath = path.join(repoRoot, "bin", "codex-profile.js");
+
+test("default auth sync interval is two minutes", () => {
+  assert.equal(DEFAULT_AUTH_SYNC_INTERVAL_MS, 120_000);
+});
 
 test("detached daemon keeps rotated credentials after the starter exits", async (t) => {
   const workspace = await createWorkspace();

@@ -4,20 +4,28 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export async function execFileText(command, args, options = {}) {
-  const { stdout } = await execFileAsync(command, args, {
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024,
-    ...options,
-  });
+  const { stdout } = await execFileAsync(
+    command,
+    args,
+    nonInteractiveProcessOptions({
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      ...options,
+    }),
+  );
   return stdout;
 }
 
 export async function spawnWithInput(command, args, input, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      ...options,
-    });
+    const child = spawn(
+      command,
+      args,
+      nonInteractiveProcessOptions({
+        stdio: ["pipe", "pipe", "pipe"],
+        ...options,
+      }),
+    );
     let stdout = "";
     let stderr = "";
 
@@ -42,6 +50,15 @@ export async function spawnWithInput(command, args, input, options = {}) {
 
     child.stdin.end(input);
   });
+}
+
+export function nonInteractiveProcessOptions(options = {}) {
+  return {
+    ...options,
+    // Windows otherwise creates a visible console for recurring PowerShell,
+    // `where`, `curl`, and Credential Manager helper processes.
+    windowsHide: true,
+  };
 }
 
 export async function spawnInteractive(command, args, options = {}) {

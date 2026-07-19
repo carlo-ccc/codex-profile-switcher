@@ -904,10 +904,10 @@ Commands:
   codex-profile refresh-auth personal [--device-auth] [--use]
   codex-profile refresh-token personal
   codex-profile sync-active
-  codex-profile watch [--interval 15000]
-  codex-profile daemon start [--interval 15000]
+  codex-profile watch [--interval 120000]
+  codex-profile daemon start [--interval 120000]
   codex-profile daemon status
-  codex-profile daemon restart [--interval 15000]
+  codex-profile daemon restart [--interval 120000]
   codex-profile daemon stop
   codex-profile use personal [--no-refresh]
   codex-profile remove personal --yes
