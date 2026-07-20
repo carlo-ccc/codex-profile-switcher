@@ -10,7 +10,7 @@ import {
 import { redactText } from "./redaction.js";
 import { getCodexCredentialStore } from "./codex-config.js";
 
-export const DEFAULT_AUTH_SYNC_INTERVAL_MS = 120_000;
+export const DEFAULT_AUTH_SYNC_INTERVAL_MS = 600_000;
 
 export async function syncActiveProfileAuth(options) {
   const { env = process.env, metadataStore, secureStore } = options;

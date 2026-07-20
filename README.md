@@ -254,7 +254,7 @@ codex-profile refresh-token account-b
 
 ### 8. 后台同步、休眠和关机行为
 
-后台守护进程默认每 **2 分钟**检查一次活动账号的本地 `~/.codex/auth.json`，仅在认证数据发生变化时写回安全存储。它不是每两分钟请求 OpenAI，也不会持续刷新用量/额度数据，因此正常情况下 CPU、内存和网络负担都很小。
+后台守护进程默认每 **10 分钟**检查一次活动账号的本地 `~/.codex/auth.json`，仅在认证数据发生变化时写回安全存储。它不是每十分钟请求 OpenAI，也不会持续刷新用量/额度数据，因此正常情况下 CPU、内存和网络负担都很小。
 
 常用命令：
 
@@ -334,7 +334,7 @@ profile to `~/.codex/auth.json`. Rotated refresh tokens are saved back to the
 system secure store. Use `--no-refresh` only for offline troubleshooting.
 
 After a profile is activated, the CLI automatically starts a detached auth-sync
-daemon. It watches the active `auth.json` every 2 minutes and saves token
+daemon. It watches the active `auth.json` every 10 minutes and saves token
 rotations back to the matching profile without modifying or stopping the running
 Codex session. The daemon keeps running after the command terminal or local GUI
 is closed:
@@ -466,10 +466,10 @@ codex-profile login personal --device-auth
 codex-profile refresh-auth personal --device-auth
 codex-profile refresh-token personal
 codex-profile sync-active
-codex-profile watch [--interval 120000]
-codex-profile daemon start [--interval 120000]
+codex-profile watch [--interval 600000]
+codex-profile daemon start [--interval 600000]
 codex-profile daemon status
-codex-profile daemon restart [--interval 120000]
+codex-profile daemon restart [--interval 600000]
 codex-profile daemon stop
 codex-profile use personal
 codex-profile remove personal --yes

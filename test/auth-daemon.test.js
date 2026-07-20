@@ -19,8 +19,8 @@ const execFileAsync = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const binPath = path.join(repoRoot, "bin", "codex-profile.js");
 
-test("default auth sync interval is two minutes", () => {
-  assert.equal(DEFAULT_AUTH_SYNC_INTERVAL_MS, 120_000);
+test("default auth sync interval is ten minutes", () => {
+  assert.equal(DEFAULT_AUTH_SYNC_INTERVAL_MS, 600_000);
 });
 
 test("detached daemon keeps rotated credentials after the starter exits", async (t) => {
